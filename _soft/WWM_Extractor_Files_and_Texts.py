@@ -6,7 +6,7 @@ import sys
 import csv
 import configparser
 import random
-from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QTextEdit, QVBoxLayout, QHBoxLayout, QFileDialog, QLabel, QGroupBox, QGridLayout, QMessageBox
+from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QTextEdit, QVBoxLayout, QHBoxLayout, QFileDialog, QLabel, QGroupBox, QGridLayout, QMessageBox, QComboBox
 from PyQt5.QtGui import QFont
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 
@@ -399,20 +399,27 @@ class MyApp(QWidget):
         group_layout.addWidget(buttonTR_select_file, 0, 0)
         group_layout.addWidget(self.labelTR_select_file, 0, 1)
 
-        buttonTR_export = QPushButton(f'Создать CSV: ID,OriginalText')
+        labelTR_format = QLabel('Формат файла перевода')
+        self.comboTR_format = QComboBox()
+        self.comboTR_format.addItem("CSV (; разделитель)", ";")
+        self.comboTR_format.addItem("TSV (табуляция)", "\t")
+        group_layout.addWidget(labelTR_format, 1, 0)
+        group_layout.addWidget(self.comboTR_format, 1, 1)
+
+        buttonTR_export = QPushButton(f'Создать CSV/TSV: ID,OriginalText')
         buttonTR_export.setStyleSheet("background: #2196F3; color: white; font-weight: bold;")
         buttonTR_export.clicked.connect(self.export_translation_csv)
-        group_layout.addWidget(buttonTR_export, 1, 0, 1, 0)
+        group_layout.addWidget(buttonTR_export, 2, 0, 1, 0)
 
-        buttonTR_apply = QPushButton(f'Применить переводы из CSV')
+        buttonTR_apply = QPushButton(f'Применить переводы из CSV/TSV')
         buttonTR_apply.setStyleSheet("background: #4CAF50; color: white; font-weight: bold;")
         buttonTR_apply.clicked.connect(self.apply_translation_csv)
-        group_layout.addWidget(buttonTR_apply, 2, 0, 1, 0)
+        group_layout.addWidget(buttonTR_apply, 3, 0, 1, 0)
 
         buttonTR_debug = QPushButton(f'Создать debug TextExtractor.csv (теги)')
         buttonTR_debug.setStyleSheet("background: #FF9800; color: white; font-weight: bold;")
         buttonTR_debug.clicked.connect(self.create_debug_csv)
-        group_layout.addWidget(buttonTR_debug, 3, 0, 1, 0)
+        group_layout.addWidget(buttonTR_debug, 4, 0, 1, 0)
 
         group_box_translate.setLayout(group_layout)
         
@@ -604,11 +611,24 @@ class MyApp(QWidget):
             self.log("Пожалуйста, выберите TextExtractor.csv для экспорта перевода")
             return
 
+        # Определяем формат (CSV или TSV) и разделитель
+        sep = ";"
+        default_name = "translation.csv"
+        file_filter = "CSV Files (*.csv);;TSV Files (*.tsv)"
+        if hasattr(self, "comboTR_format"):
+            fmt_sep = self.comboTR_format.currentData()
+            if fmt_sep == "\t":
+                sep = "\t"
+                default_name = "translation.tsv"
+                file_filter = "TSV Files (*.tsv);;CSV Files (*.csv)"
+            else:
+                sep = ";"
+
         output_path, _ = QFileDialog.getSaveFileName(
             self,
-            "Сохранить CSV для перевода (ID,OriginalText)",
-            "translation.csv",
-            "CSV Files (*.csv)"
+            "Сохранить файл для перевода (ID,OriginalText)",
+            default_name,
+            file_filter
         )
         if not output_path:
             return
@@ -629,7 +649,7 @@ class MyApp(QWidget):
                     return
 
                 with open(output_path, 'w', encoding='utf-8', newline='') as out_f:
-                    writer = csv.writer(out_f, delimiter=';')
+                    writer = csv.writer(out_f, delimiter=sep)
                     writer.writerow(['ID', 'OriginalText'])
                     count = 0
                     for row in reader:
@@ -652,8 +672,8 @@ class MyApp(QWidget):
 
         trans_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Выберите CSV с переводом (ID,OriginalText)",
-            filter='*.csv'
+            "Выберите CSV/TSV с переводом (ID,OriginalText)",
+            filter='CSV/TSV Files (*.csv *.tsv)'
         )
         if not trans_path:
             return
@@ -668,13 +688,12 @@ class MyApp(QWidget):
             return
 
         try:
-            # Определяем разделитель в файле перевода
-            with open(trans_path, 'r', encoding='utf-8', newline='') as tf:
-                sample = tf.read(2048)
-                if not sample:
-                    self.log("❌ Файл перевода пуст")
-                    return
-                delim = ';' if sample.count(';') > sample.count(',') else ','
+            # Определяем разделитель в файле перевода:
+            ext = os.path.splitext(trans_path)[1].lower()
+            if ext == '.tsv':
+                delim = '\t'
+            else:
+                delim = ';'
 
             translations = {}
             with open(trans_path, 'r', encoding='utf-8', newline='') as tf:
