@@ -190,13 +190,20 @@ def _validate_entry_tags(
         errors_by_id[current_id].add(ERROR_CODE_OPENING_TAG_WITHOUT_CLOSING)
     
     # 3. Проверка тегов-ссылок <...|...|...|...>
+    # Проверяем только теги, которые содержат символ | (теги-ссылки)
+    # Если в <> просто текст без |, то это не ошибка (например, <Water Loong Army>)
     for link_match in re.finditer(r'<([^>]*)>', text):
         link_content = link_match.group(1)
-        parts = link_content.split('|')
         # Игнорируем HTML-подобные теги (например, <TEXT>, </TEXT>, <IMAGE>)
-        if not re.match(r'^[A-Z/]', link_content.strip()):
+        if re.match(r'^[A-Z/]', link_content.strip()):
+            continue
+        
+        # Проверяем только если есть символ | (это тег-ссылка)
+        if '|' in link_content:
+            parts = link_content.split('|')
             if len(parts) != 4 and len(parts) != 5:
                 errors_by_id[current_id].add(ERROR_CODE_LINK_TAG_INVALID)
+        # Если нет |, то это просто текст в угловых скобках - не ошибка
     
     # 4. Проверка переменных {...}
     open_braces = text.count('{')
@@ -333,6 +340,9 @@ def main():
     
     print(f"\n🔍 Валидация тегов:\n")
     
+    # Отслеживаем, есть ли ошибки только в RU (блокирующие)
+    has_ru_only_errors = False
+    
     # Для каждого ID проверяем ошибки
     for entry_id in sorted(all_ids):
         ru_error_codes = ru_errors.get(entry_id, set())
@@ -345,9 +355,10 @@ def main():
         elif en_error_codes:
             label = "[EN]"
             prefix = "⚠️"
-        else:  # только в RU
+        else:  # только в RU - это ошибка!
             label = "[RU]"
-            prefix = "❗️⚠️"
+            prefix = "❌"
+            has_ru_only_errors = True
         
         # Получаем текст записи для контекста
         start_line, entry_text = _get_entry_text_by_id(str(ru_file), entry_id)
@@ -369,9 +380,17 @@ def main():
     total_en = sum(len(codes) for codes in en_errors.values())
     total_unique = len(all_ids)
     
-    print(f"\n⚠️  Найдено предупреждений: {total_unique} записей (RU: {total_ru}, EN: {total_en})")
-    print("ℹ️  Это предупреждения, а не критичные ошибки. Коммит не будет заблокирован.")
-    sys.exit(0)
+    ru_only_count = sum(1 for entry_id in all_ids if entry_id in ru_errors and entry_id not in en_errors)
+    
+    if has_ru_only_errors:
+        print(f"\n❌ Найдено ошибок только в RU: {ru_only_count} записей (блокирующие)")
+        print(f"⚠️  Найдено предупреждений: {total_unique - ru_only_count} записей (RU\\EN: {total_ru - ru_only_count}, EN: {total_en})")
+        print("❌ Ошибки только в RU файле требуют исправления. Коммит будет заблокирован.")
+        sys.exit(1)
+    else:
+        print(f"\n⚠️  Найдено предупреждений: {total_unique} записей (RU\\EN: {total_ru}, EN: {total_en})")
+        print("ℹ️  Это предупреждения, а не критичные ошибки. Коммит не будет заблокирован.")
+        sys.exit(0)
 
 
 if __name__ == '__main__':
